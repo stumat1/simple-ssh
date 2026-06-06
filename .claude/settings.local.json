@@ -1,9 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(npx electron-vite *)",
-      "Bash(node -e \"setTimeout\\(\\(\\)=>{},7000\\)\")",
-      "Bash(npx electron *)"
-    ]
-  }
-}
