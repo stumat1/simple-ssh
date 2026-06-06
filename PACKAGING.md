@@ -14,9 +14,9 @@ producing:
 
 ```
 dist/
-├── SSH Terminal-<version>-setup.exe        # the installer (assisted NSIS)
-├── SSH Terminal-<version>-setup.exe.blockmap
-└── win-unpacked/                            # unpacked app (ssh-terminal.exe) for quick testing
+├── Simple SSH-<version>-setup.exe          # the installer (assisted NSIS)
+├── Simple SSH-<version>-setup.exe.blockmap
+└── win-unpacked/                            # unpacked app (simple-ssh.exe) for quick testing
 ```
 
 `dist/` is git-ignored. The installer is **not one-click**: it lets the user choose the
@@ -59,7 +59,7 @@ Without a signature, Windows SmartScreen shows an "unknown publisher" warning on
 run. Dev builds are intentionally **unsigned** — verify with:
 
 ```powershell
-Get-AuthenticodeSignature 'dist\SSH Terminal-<version>-setup.exe'   # Status: NotSigned
+Get-AuthenticodeSignature 'dist\Simple SSH-<version>-setup.exe'   # Status: NotSigned
 ```
 
 To sign, enable **exactly one** of the approaches below and rebuild. **Never commit
@@ -116,10 +116,10 @@ Signing is **interactive** (the token prompts for a PIN), so this can't run unat
 ### Verify a signed build
 
 ```powershell
-Get-AuthenticodeSignature 'dist\SSH Terminal-<version>-setup.exe'   # Status: Valid
+Get-AuthenticodeSignature 'dist\Simple SSH-<version>-setup.exe'   # Status: Valid
 ```
 
 ## Manual acceptance (per plan §7, Phase 6)
 
-- [ ] Run `dist\SSH Terminal-<version>-setup.exe` on a clean Windows VM → installs and launches.
+- [ ] Run `dist\Simple SSH-<version>-setup.exe` on a clean Windows VM → installs and launches.
 - [ ] Open a real SSH session (password / key / agent), confirm interactive apps work.

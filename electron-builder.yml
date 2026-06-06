@@ -1,8 +1,8 @@
 # electron-builder configuration — Windows NSIS installer.
 # Build with:  npm run package   (runs electron-vite build, then packs out/ + resources/)
 
-appId: com.sshterminal.app
-productName: SSH Terminal
+appId: com.simplessh.app
+productName: Simple SSH
 copyright: Copyright © 2026
 
 directories:
@@ -40,7 +40,7 @@ npmRebuild: false
 win:
   # electron-builder generates the multi-resolution .ico from this 512² PNG.
   icon: resources/icon.png
-  executableName: ssh-terminal
+  executableName: simple-ssh
   target:
     - target: nsis
       arch:
@@ -67,6 +67,6 @@ nsis:
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
   createStartMenuShortcut: true
-  shortcutName: SSH Terminal
-  uninstallDisplayName: SSH Terminal ${version}
+  shortcutName: Simple SSH
+  uninstallDisplayName: Simple SSH ${version}
   artifactName: ${productName}-${version}-setup.${ext}

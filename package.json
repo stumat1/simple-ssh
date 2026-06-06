@@ -1,9 +1,9 @@
 {
-  "name": "ssh-terminal",
+  "name": "simple-ssh",
   "version": "0.0.1",
   "description": "A lightweight, secure Windows SSH client (Electron + ssh2 + xterm.js)",
   "main": "./out/main/index.js",
-  "author": "",
+  "author": "stumat1 <stumat1@mailbox.org>",
   "license": "MIT",
   "private": true,
   "scripts": {
