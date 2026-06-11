@@ -11,15 +11,10 @@
     "noFallthroughCasesInSwitch": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "types": ["node", "electron-vite/node"],
+    "types": ["node"],
     "paths": {
       "@shared/*": ["./src/shared/*"]
     }
   },
-  "include": [
-    "src/main/**/*",
-    "src/preload/**/*",
-    "src/shared/**/*",
-    "electron.vite.config.ts"
-  ]
+  "include": ["vite.config.ts"]
 }

@@ -1,0 +1,14 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Permissions for the Simple SSH main window",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "core:app:allow-version",
+    "dialog:allow-open",
+    "clipboard-manager:allow-read-text",
+    "clipboard-manager:allow-write-text",
+    "opener:allow-open-url"
+  ]
+}

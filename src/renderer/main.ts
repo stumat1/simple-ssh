@@ -1,4 +1,5 @@
 import './styles.css'
+import { tauriSshApi } from './ssh-api'
 import { TabManager } from './tabs'
 import { setupHostKeyDialog } from './host-key-dialog'
 import { setupKbdDialog } from './kbd-dialog'
@@ -9,6 +10,8 @@ function el<T extends HTMLElement>(id: string): T {
   if (!node) throw new Error(`Missing element #${id}`)
   return node as T
 }
+
+window.ssh = tauriSshApi
 
 function bootstrap(): void {
   // App-level shortcuts shared by the window listener and each terminal so they

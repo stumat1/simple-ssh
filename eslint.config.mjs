@@ -3,7 +3,18 @@ import tseslint from 'typescript-eslint'
 import prettier from 'eslint-config-prettier'
 
 export default tseslint.config(
-  { ignores: ['out/**', 'dist/**', 'node_modules/**', 'sign.cjs'] },
+  {
+    ignores: [
+      'out/**',
+      'dist/**',
+      'dist-web/**',
+      'node_modules/**',
+      'src-tauri/target/**',
+      'src-tauri/gen/**',
+      'scripts/**',
+      'sign.cjs'
+    ]
+  },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {

@@ -1,7 +1,17 @@
 node_modules/
 out/
 dist/
+dist-web/
 *.log
 .DS_Store
 .vite/
 .claude/
+
+# Code-signing secrets — never commit certificates or credentials
+.env
+.env.*
+!.env.example
+*.pfx
+*.p12
+*.pem
+*.key

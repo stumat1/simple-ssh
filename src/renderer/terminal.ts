@@ -4,6 +4,7 @@ import { WebglAddon } from '@xterm/addon-webgl'
 import { Unicode11Addon } from '@xterm/addon-unicode11'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import { SearchAddon } from '@xterm/addon-search'
+import { openUrl } from '@tauri-apps/plugin-opener'
 import '@xterm/xterm/css/xterm.css'
 import type { ThemeName } from './settings'
 
@@ -159,7 +160,13 @@ export function createTerminal(container: HTMLElement, init: TerminalInit): Term
     console.warn('WebGL renderer unavailable; using DOM renderer.', err)
   }
 
-  term.loadAddon(new WebLinksAddon())
+  // Open links in the OS browser via the backend — never in the app window.
+  term.loadAddon(
+    new WebLinksAddon((event, uri) => {
+      event.preventDefault()
+      void openUrl(uri)
+    })
+  )
 
   // --- Find bar ---
   const { bar, input, prev, next, close } = buildSearchBar()
