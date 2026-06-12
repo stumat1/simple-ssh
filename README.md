@@ -123,6 +123,17 @@ stumat1 <stumat1@mailbox.org>
 
 <a href="https://buymeacoffee.com/stumat1" target="_blank">Buy Me A Coffee</a>
 
+## Disclaimer
+
+Simple SSH is provided **"as is"**, without warranty of any kind, express or implied,
+including but not limited to the warranties of merchantability, fitness for a particular
+purpose, and noninfringement. In no event shall the author be liable for any claim, damages,
+or other liability arising from, out of, or in connection with the software or its use —
+including loss of data, service interruption, or unauthorized access resulting from its use.
+
+Use this software at your own risk, and only to access systems you own or are explicitly
+authorized to access. See the [LICENSE](LICENSE) file for the full terms.
+
 ## License
 
 MIT
