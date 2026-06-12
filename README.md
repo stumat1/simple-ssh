@@ -86,14 +86,14 @@ passphrases live in the Windows Credential Manager — the same regardless of ho
 
 ## Scripts
 
-| Script | Description |
-| --- | --- |
-| `npm run dev` | Run the app in development with hot reload |
-| `npm run build` | Build the release app + NSIS installer |
-| `npm run typecheck` | Typecheck the renderer and config TypeScript |
-| `npm run lint` | Run ESLint |
-| `npm run format` | Format sources with Prettier |
-| `cargo test` (in `src-tauri/`) | Run Rust backend unit tests |
+| Script                         | Description                                  |
+| ------------------------------ | -------------------------------------------- |
+| `npm run dev`                  | Run the app in development with hot reload   |
+| `npm run build`                | Build the release app + NSIS installer       |
+| `npm run typecheck`            | Typecheck the renderer and config TypeScript |
+| `npm run lint`                 | Run ESLint                                   |
+| `npm run format`               | Format sources with Prettier                 |
+| `cargo test` (in `src-tauri/`) | Run Rust backend unit tests                  |
 
 ## Project structure
 
@@ -120,6 +120,8 @@ The renderer talks to the backend through a single typed surface (`window.ssh`, 
 ## Author
 
 stumat1 <stumat1@mailbox.org>
+
+<a href="https://buymeacoffee.com/stumat1" target="_blank">Buy Me A Coffee</a>
 
 ## License
 
