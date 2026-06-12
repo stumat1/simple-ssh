@@ -27,7 +27,7 @@ pub struct SecretStore;
 
 impl SecretStore {
     pub fn has(&self, id: &str) -> bool {
-        matches!(entry(id).and_then(|e| e.get_password()), Ok(_))
+        entry(id).and_then(|e| e.get_password()).is_ok()
     }
 
     /// Persist a secret. Returns false if the OS keystore rejected it.

@@ -7,6 +7,9 @@ dist-web/
 .vite/
 .claude/
 
+# Local signing notes
+SIGNING-INSTRUCTIONS.md
+
 # Code-signing secrets — never commit certificates or credentials
 .env
 .env.*
