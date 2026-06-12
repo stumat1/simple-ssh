@@ -7,11 +7,16 @@ Simple SSH gives you a fast, tabbed terminal for connecting to remote hosts, wit
 connection profiles, OS-encrypted secret storage, and host-key verification — without the
 weight of a full terminal suite.
 
+![Simple SSH — tabbed terminal connected to a host, dark theme](docs/screenshot.png)
+
 ## Features
 
 - **Tabbed sessions** — open and switch between multiple SSH connections in one window.
 - **Connection profiles** — save hosts, ports, usernames, and auth method for one-click reconnect.
 - **Recent connections** — recently used targets are recorded automatically for quick access.
+- **~/.ssh/config import** — pull Host entries straight into the connect form.
+- **Local port forwarding** — `-L`-style tunnels, managed per tab from the ⇄ panel.
+- **Auto-reconnect** — a dropped session shows a one-click reconnect overlay.
 - **Multiple auth methods** — password, private key (with passphrase), and SSH agent.
   (PuTTY `.ppk` keys are not supported — export to OpenSSH format with PuTTYgen.)
 - **Keyboard-interactive auth** — supports MFA/OTP challenges.
@@ -19,7 +24,13 @@ weight of a full terminal suite.
   Credential Manager; plaintext is never written to disk.
 - **Host-key verification** — unknown and changed host keys prompt for an explicit trust
   decision (TOFU), with SHA-256 fingerprints.
-- **Terminal niceties** — in-terminal search, adjustable font size, and a light/dark theme toggle.
+- **Color schemes** — Dracula, Solarized Dark/Light, Gruvbox Dark, and One Dark, or auto-match
+  the app's light/dark theme.
+- **Terminal settings** — font family, cursor style and blink, scrollback, and line height,
+  applied live to all open tabs.
+- **Tab niceties** — middle-click close, drag to reorder, rename, and duplicate.
+- **Terminal niceties** — in-terminal search, right-click copy/paste menu, adjustable font
+  size, and a light/dark theme toggle.
 
 ## Requirements
 
@@ -42,6 +53,10 @@ A throwaway SSH server for manual testing is included:
 ```bash
 node scripts/test-sshd.cjs 2222   # user "test", password "secret123"
 ```
+
+It also accepts user `mfa` (keyboard-interactive: password, then OTP `42`) for testing MFA
+prompts, user `keyuser` (any public key) for key auth, and echoes on forwarded direct-tcpip
+connections for tunnel testing.
 
 ## Building
 
