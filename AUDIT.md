@@ -1,6 +1,6 @@
 # Pre-Release Audit — Simple SSH
 
-**Date:** 2026-06-12 · **Version audited:** 0.0.1 → released as 0.1.0 · **Scope:** security deep-dive, code quality, functional QA, release readiness.
+**Date:** 2026-06-12 · **Version audited:** 0.0.1 → released as 1.0.0 · **Scope:** security deep-dive, code quality, functional QA, release readiness.
 
 ## Executive summary
 
@@ -12,7 +12,7 @@ The app is in good shape for a first public release. The manual security review 
 |----|----------|------|---------|--------|
 | F1 | Blocker | Quality gate | `cargo clippy -D warnings` failed: `redundant_pattern_matching` in `src-tauri/src/secrets.rs:30` | **Fixed** (use `.is_ok()`) |
 | F2 | Blocker | Release | No `LICENSE` file despite MIT declared in `package.json` and `Cargo.toml` | **Fixed** (MIT LICENSE added) |
-| F3 | Blocker | Release | Version 0.0.1 in manifests | **Fixed** (bumped to 0.1.0 in `package.json` + `Cargo.toml`; `tauri.conf.json` inherits from package.json) |
+| F3 | Blocker | Release | Version 0.0.1 in manifests | **Fixed** (bumped to 1.0.0 in `package.json` + `Cargo.toml`; `tauri.conf.json` inherits from package.json) |
 | F4 | Medium | Dependencies | RUSTSEC-2023-0071: `rsa` crate Marvin timing side-channel (CVSS 5.9), pulled in via russh's `rsa` feature; **no upstream fix exists**. Practical exploitability against an interactive SSH *client* is low (attacker needs many timed RSA-decrypt observations). Mitigation: prefer Ed25519 keys; track russh releases. | Backlog |
 | F5 | Low | Known bug | Theme toggle doesn't repaint window chrome while a terminal is open (WebView2 compositor; minimize+restore flushes). Cosmetic, known workaround. | Backlog |
 | F6 | Low | Dead code | `sign.cjs` (Electron-era electron-builder signing hook) is tracked but unused since the Tauri port. Contains no secrets. | Backlog — remove |
@@ -60,8 +60,8 @@ Not exercised this round (covered by earlier sessions and/or unit tests, or low 
 
 ## Release readiness
 
-- **Artifacts**: clean `npm run build` produces `simple-ssh.exe` (standalone, ~13 MB) + `Simple SSH_0.1.0_x64-setup.exe` (NSIS per-user, ~3.3 MB).
-- **Installer cycle**: silent install to `%LOCALAPPDATA%\Simple SSH` ✓ → installed app launches and shows v0.1.0 ✓ → silent uninstall removes install dir and registry entry ✓; user data in `%APPDATA%\com.simplessh.app` persists across uninstall (deliberate, documented in README).
+- **Artifacts**: clean `npm run build` produces `simple-ssh.exe` (standalone, ~13 MB) + `Simple SSH_1.0.0_x64-setup.exe` (NSIS per-user, ~3.3 MB).
+- **Installer cycle**: silent install to `%LOCALAPPDATA%\Simple SSH` ✓ → installed app launches and shows v1.0.0 ✓ → silent uninstall removes install dir and registry entry ✓; user data in `%APPDATA%\com.simplessh.app` persists across uninstall (deliberate, documented in README).
 - **Signing**: `SIGNING-INSTRUCTIONS.md` (untracked, now gitignored — contains no secrets) is **current for the Tauri flow** (two-pass: sign exe → `npx tauri bundle` → sign installer). Not executed to avoid consuming an eSigner operation.
 - **Docs**: README is accurate against tested behavior, including the unsigned-build Smart App Control note and data locations. LICENSE now present.
 - **Repo hygiene**: `.gitignore` change (ignore local signing notes) is correct; build outputs ignored; no secrets in history.

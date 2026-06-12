@@ -1,6 +1,6 @@
 {
   "name": "simple-ssh",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "A lightweight, secure Windows SSH client (Tauri + russh + xterm.js)",
   "author": "stumat1 <stumat1@mailbox.org>",
   "license": "MIT",
