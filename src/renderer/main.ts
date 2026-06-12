@@ -3,6 +3,9 @@ import { tauriSshApi } from './ssh-api'
 import { TabManager } from './tabs'
 import { setupHostKeyDialog } from './host-key-dialog'
 import { setupKbdDialog } from './kbd-dialog'
+import { setupSettingsDialog } from './settings-dialog'
+import { setupForwardsPanel } from './forwards-panel'
+import { showContextMenu, type ContextMenuEntry } from './context-menu'
 import { settings } from './settings'
 
 function el<T extends HTMLElement>(id: string): T {
@@ -14,6 +17,10 @@ function el<T extends HTMLElement>(id: string): T {
 window.ssh = tauriSshApi
 
 function bootstrap(): void {
+  // Suppress the WebView2 default context menu everywhere; components that want
+  // a menu (e.g. the terminal) attach their own contextmenu handlers.
+  window.addEventListener('contextmenu', (e) => e.preventDefault())
+
   // App-level shortcuts shared by the window listener and each terminal so they
   // work whether the focus is on the terminal or the connect form.
   function appShortcut(e: KeyboardEvent): boolean {
@@ -26,6 +33,10 @@ function bootstrap(): void {
       case 'KeyW':
         if (e.shiftKey) return false
         tabs.closeActive()
+        return true
+      case 'KeyD':
+        if (!e.shiftKey) return false
+        tabs.duplicateActive()
         return true
       case 'Equal':
       case 'NumpadAdd':
@@ -53,6 +64,7 @@ function bootstrap(): void {
   window.ssh.onData((sid, data) => tabs.tabForSession(sid)?.write(data))
   window.ssh.onStatus((sid, status) => tabs.tabForSession(sid)?.setStatus(status))
   window.ssh.onError((sid, message) => tabs.tabForSession(sid)?.setError(message))
+  window.ssh.onForwardStatus((event) => tabs.tabForSession(event.sessionId)?.updateForward(event))
 
   // Blocking auth modals (host-key trust, keyboard-interactive). Serialize so
   // concurrent handshakes (multiple tabs) queue their dialogs instead of overlapping.
@@ -96,6 +108,29 @@ function bootstrap(): void {
   el<HTMLButtonElement>('font-dec').addEventListener('click', () => settings.bumpFont(-1))
   el<HTMLButtonElement>('font-inc').addEventListener('click', () => settings.bumpFont(1))
   el<HTMLButtonElement>('theme-toggle').addEventListener('click', () => settings.toggleTheme())
+
+  const settingsDialog = setupSettingsDialog()
+  el<HTMLButtonElement>('settings-open').addEventListener('click', () => settingsDialog.open())
+
+  const forwardsPanel = setupForwardsPanel(() => tabs.activeForwardTarget())
+  el<HTMLButtonElement>('forwards-open').addEventListener('click', () => forwardsPanel.open())
+
+  // Recent connections live behind a status-bar button (keeps the connect form
+  // uncluttered). One click on an entry connects, reusing the one-click logic.
+  const recentsBtn = el<HTMLButtonElement>('recents-open')
+  recentsBtn.addEventListener('click', () => {
+    void window.ssh.listRecents().then((recents) => {
+      const entries: ContextMenuEntry[] = recents.length
+        ? recents.map((r) => ({
+            label: `${r.username}@${r.host}:${r.port} · ${r.auth.kind}`,
+            action: () => tabs.openRecent(r)
+          }))
+        : [{ label: 'No recent connections', enabled: false, action: () => {} }]
+      const rect = recentsBtn.getBoundingClientRect()
+      // Anchor at the button; showContextMenu clamps it on-screen (opens upward).
+      showContextMenu(rect.left, rect.top, entries)
+    })
+  })
 
   // Window-level shortcuts (used when the terminal isn't focused, e.g. the form).
   window.addEventListener('keydown', (e) => {

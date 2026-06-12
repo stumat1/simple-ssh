@@ -1,9 +1,28 @@
 import { createTerminal, type TerminalHandle, type TerminalInit } from './terminal'
 import { createConnectForm, type ConnectFormHandle } from './connect-form'
-import type { ConnectRequest, SessionStatus } from '@shared/types'
+import { showContextMenu } from './context-menu'
+import type {
+  AuthMethod,
+  ConnectRequest,
+  ForwardSpec,
+  ForwardStatus,
+  ForwardStatusEvent,
+  RecentConnection,
+  SessionStatus
+} from '@shared/types'
 import type { AppSettings } from './settings'
 
 type TabState = 'form' | 'connecting' | 'connected' | 'disconnected'
+
+export interface ForwardInfo {
+  id: string
+  spec: ForwardSpec
+  status: ForwardStatus
+  message?: string
+}
+
+/** Fired on `window` whenever any tab's forward list changes. */
+export const FORWARDS_CHANGED = 'ssh-terminal:forwards-changed'
 
 let tabSeq = 0
 
@@ -16,6 +35,14 @@ class Tab {
   sessionId: string | null = null
   private state: TabState = 'form'
   private title = 'New tab'
+  // Last request actually sent, kept for one-click reconnect / duplicate-tab.
+  // May hold an unsaved typed password in renderer memory — accepted trade-off
+  // for a personal-use app.
+  private lastReq: ConnectRequest | null = null
+  private wasConnected = false
+  private customTitle = false
+  private tooltip = ''
+  private readonly forwards = new Map<string, Omit<ForwardInfo, 'id'>>()
 
   readonly pane: HTMLElement
   readonly button: HTMLElement
@@ -23,6 +50,9 @@ class Tab {
   private readonly dot: HTMLElement
   private readonly termContainer: HTMLElement
   private readonly form: ConnectFormHandle
+  private readonly reconnectOverlay: HTMLElement
+  private readonly reconnectMsg: HTMLElement
+  private readonly reconnectBtn: HTMLButtonElement
   private terminal: TerminalHandle | null = null
 
   constructor(private readonly mgr: TabManager) {
@@ -32,7 +62,40 @@ class Tab {
     this.termContainer = document.createElement('div')
     this.termContainer.className = 'tab-terminal'
     this.form = createConnectForm((req) => void this.connect(req))
-    this.pane.append(this.termContainer, this.form.element)
+
+    // Reconnect overlay, shown instead of the form when a live session drops.
+    this.reconnectOverlay = document.createElement('div')
+    this.reconnectOverlay.className = 'overlay'
+    this.reconnectOverlay.style.display = 'none'
+    const card = document.createElement('div')
+    card.className = 'card'
+    const heading = document.createElement('h2')
+    heading.textContent = 'Connection closed'
+    this.reconnectMsg = document.createElement('p')
+    this.reconnectMsg.className = 'hint'
+    const actions = document.createElement('div')
+    actions.className = 'card-actions'
+    this.reconnectBtn = document.createElement('button')
+    this.reconnectBtn.type = 'button'
+    this.reconnectBtn.textContent = 'Reconnect'
+    this.reconnectBtn.addEventListener('click', () => {
+      if (this.lastReq) void this.connect(this.lastReq)
+    })
+    const editBtn = document.createElement('button')
+    editBtn.type = 'button'
+    editBtn.className = 'btn-secondary'
+    editBtn.textContent = 'Edit connection'
+    editBtn.addEventListener('click', () => {
+      this.wasConnected = false
+      if (this.lastReq) this.form.prefill(this.lastReq)
+      this.applyState('disconnected')
+      this.form.focus()
+    })
+    actions.append(this.reconnectBtn, editBtn)
+    card.append(heading, this.reconnectMsg, actions)
+    this.reconnectOverlay.appendChild(card)
+
+    this.pane.append(this.termContainer, this.form.element, this.reconnectOverlay)
 
     // Tab bar button: status dot + title + close.
     this.button = document.createElement('div')
@@ -51,16 +114,81 @@ class Tab {
       this.mgr.closeTab(this)
     })
     this.button.append(this.dot, this.titleEl, closeBtn)
-    this.button.addEventListener('click', () => this.mgr.activate(this))
+    this.button.addEventListener('click', () => {
+      if (this.mgr.consumeDragClick()) return
+      this.mgr.activate(this)
+    })
+    // Middle-click closes the tab.
+    this.button.addEventListener('auxclick', (e) => {
+      if (e.button === 1) {
+        e.preventDefault()
+        this.mgr.closeTab(this)
+      }
+    })
+    this.button.addEventListener('dblclick', (e) => {
+      e.preventDefault()
+      this.startRename()
+    })
+    this.button.addEventListener('contextmenu', (e) => {
+      e.preventDefault()
+      e.stopPropagation()
+      showContextMenu(e.clientX, e.clientY, [
+        {
+          label: 'Duplicate',
+          enabled: this.lastReq !== null,
+          action: () => this.mgr.duplicate(this)
+        },
+        { label: 'Rename', action: () => this.startRename() },
+        'separator',
+        { label: 'Close', action: () => this.mgr.closeTab(this) }
+      ])
+    })
+    this.mgr.attachDrag(this)
 
     this.setTitle('New tab')
     this.applyState('form')
   }
 
-  private setTitle(title: string): void {
+  private setTitle(title: string, opts?: { force?: boolean }): void {
+    if (this.customTitle && !opts?.force) return
     this.title = title
     this.titleEl.textContent = title
-    this.button.title = title
+    this.button.title = this.tooltip || title
+  }
+
+  /** Inline-rename the tab; a manual name survives later auto-titling. */
+  private startRename(): void {
+    const input = document.createElement('input')
+    input.className = 'tab-rename'
+    input.value = this.title
+    // Keep clicks/drags inside the input from activating or dragging the tab.
+    input.addEventListener('pointerdown', (e) => e.stopPropagation())
+    input.addEventListener('click', (e) => e.stopPropagation())
+    input.addEventListener('dblclick', (e) => e.stopPropagation())
+    let done = false
+    const finish = (commit: boolean): void => {
+      if (done) return
+      done = true
+      const name = input.value.trim()
+      input.remove()
+      if (commit && name) {
+        this.customTitle = true
+        this.setTitle(name, { force: true })
+      } else {
+        this.titleEl.textContent = this.title
+      }
+      if (this.mgr.isActive(this)) this.mgr.refreshStatusBar()
+    }
+    input.addEventListener('keydown', (e) => {
+      e.stopPropagation()
+      if (e.key === 'Enter') finish(true)
+      else if (e.key === 'Escape') finish(false)
+    })
+    input.addEventListener('blur', () => finish(true))
+    this.titleEl.textContent = ''
+    this.titleEl.appendChild(input)
+    input.focus()
+    input.select()
   }
 
   private ensureTerminal(): TerminalHandle {
@@ -77,8 +205,11 @@ class Tab {
   }
 
   private async connect(req: ConnectRequest): Promise<void> {
+    this.lastReq = req
     this.form.setError('')
     this.form.setBusy(true)
+    this.tooltip = `${req.username}@${req.host}:${req.port}`
+    this.button.title = this.tooltip
     this.setTitle(`${req.username}@${req.host}`)
     const handle = this.ensureTerminal()
     handle.term.clear()
@@ -95,9 +226,32 @@ class Tab {
       this.mgr.registerSession(sessionId, this)
     } catch (err) {
       this.form.setBusy(false)
+      // Fall back to the form (prefilled — it may be blank in a duplicated tab).
+      this.wasConnected = false
+      this.form.prefill(req)
       this.form.setError(err instanceof Error ? err.message : String(err))
       this.applyState('form')
     }
+  }
+
+  /** Connect using a request captured from another tab (duplicate-tab). */
+  connectWith(req: ConnectRequest): void {
+    void this.connect(req)
+  }
+
+  /** Whether this tab is still an unused "new tab" (form shown, never connected). */
+  isFresh(): boolean {
+    return this.state === 'form' && this.sessionId === null
+  }
+
+  /** Load a recent target into this tab's form, auto-connecting when possible. */
+  openTarget(host: string, port: number, username: string, auth: AuthMethod): void {
+    this.form.openTarget(host, port, username, auth)
+  }
+
+  /** The last request sent from this tab, if any (used by duplicate-tab). */
+  get lastRequest(): ConnectRequest | null {
+    return this.lastReq
   }
 
   write(data: Uint8Array): void {
@@ -106,6 +260,25 @@ class Tab {
 
   setError(message: string): void {
     this.form.setError(message)
+    this.reconnectMsg.textContent = message
+  }
+
+  /** Apply a forward lifecycle event ('stopped' removes it from the list). */
+  updateForward(event: ForwardStatusEvent): void {
+    if (event.status === 'stopped') {
+      this.forwards.delete(event.forwardId)
+    } else {
+      this.forwards.set(event.forwardId, {
+        spec: event.spec,
+        status: event.status,
+        message: event.message
+      })
+    }
+    window.dispatchEvent(new CustomEvent(FORWARDS_CHANGED))
+  }
+
+  listForwards(): ForwardInfo[] {
+    return [...this.forwards.entries()].map(([id, f]) => ({ id, ...f }))
   }
 
   setStatus(status: SessionStatus): void {
@@ -115,6 +288,7 @@ class Tab {
         break
       case 'ready':
         this.form.setBusy(false)
+        this.wasConnected = true
         this.applyState('connected')
         if (this.mgr.isActive(this)) {
           this.terminal?.fit()
@@ -129,24 +303,32 @@ class Tab {
         }
         this.form.setBusy(false)
         this.terminal?.term.writeln('\r\n\x1b[90m[session closed]\x1b[0m')
+        if (status === 'closed') this.reconnectMsg.textContent = 'The session ended.'
+        if (this.forwards.size > 0) {
+          // The backend cancels the listeners on teardown; reflect that here.
+          this.forwards.clear()
+          window.dispatchEvent(new CustomEvent(FORWARDS_CHANGED))
+        }
         this.applyState('disconnected')
         break
     }
     if (this.mgr.isActive(this)) this.mgr.refreshStatusBar()
   }
 
-  /** Toggle form vs terminal within the pane based on connection state. */
+  /** Toggle form / reconnect overlay / terminal within the pane based on state. */
   private applyState(state: TabState): void {
     this.state = state
-    const showForm = state === 'form' || state === 'disconnected'
+    // After a live session drops, offer one-click reconnect instead of the form.
+    const useOverlay = state === 'disconnected' && this.wasConnected && this.lastReq !== null
+    this.reconnectOverlay.style.display = useOverlay ? 'flex' : 'none'
+    const showForm = (state === 'form' || state === 'disconnected') && !useOverlay
     if (showForm) this.form.show()
     else this.form.hide()
   }
 
-  /** Apply font-size / theme changes to this tab's terminal (if any). */
+  /** Apply appearance settings to this tab's terminal (if any). */
   applySettings(s: AppSettings): void {
-    this.terminal?.setFontSize(s.fontSize)
-    this.terminal?.setTheme(s.theme)
+    this.terminal?.applySettings(s)
   }
 
   show(): void {
@@ -154,6 +336,8 @@ class Tab {
     if (this.state === 'connected') {
       this.terminal?.fit()
       this.terminal?.term.focus()
+    } else if (this.reconnectOverlay.style.display !== 'none') {
+      this.reconnectBtn.focus()
     } else {
       this.form.focus()
     }
@@ -219,8 +403,7 @@ export class TabManager {
 
   /** Terminal construction options reflecting current settings. */
   terminalInit(): TerminalInit {
-    const s = this.options.getSettings()
-    return { fontSize: s.fontSize, theme: s.theme, onAppShortcut: this.options.onAppShortcut }
+    return { settings: this.options.getSettings(), onAppShortcut: this.options.onAppShortcut }
   }
 
   newTab(): Tab {
@@ -271,6 +454,92 @@ export class TabManager {
     if (this.active) this.closeTab(this.active)
   }
 
+  /** Open a new tab connected with the same request as `tab`. */
+  duplicate(tab: Tab): void {
+    const req = tab.lastRequest
+    if (!req) return
+    this.newTab().connectWith(req)
+  }
+
+  /** Duplicate the active tab (Ctrl+Shift+D). */
+  duplicateActive(): void {
+    if (this.active) this.duplicate(this.active)
+  }
+
+  /**
+   * Open a recent connection: reuse the active tab when it's still an unused
+   * "new tab", otherwise open a fresh one (never steal a live session's tab).
+   */
+  openRecent(recent: RecentConnection): void {
+    const tab = this.active?.isFresh() ? this.active : this.newTab()
+    this.activate(tab)
+    tab.openTarget(recent.host, recent.port, recent.username, recent.auth)
+  }
+
+  // --- Drag-to-reorder -------------------------------------------------------
+  // Pointer-event based: a horizontal move beyond a small threshold starts the
+  // drag; the button is repositioned live in the tab bar, and on release the
+  // tabs array is re-synced to DOM order. The click that follows a drag is
+  // swallowed so it doesn't also activate the tab.
+
+  private dragJustEnded = false
+
+  consumeDragClick(): boolean {
+    return this.dragJustEnded
+  }
+
+  attachDrag(tab: Tab): void {
+    const btn = tab.button
+    btn.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return
+      if ((e.target as HTMLElement).closest('.tab-close, .tab-rename')) return
+      const startX = e.clientX
+      let dragging = false
+
+      const onMove = (ev: PointerEvent): void => {
+        if (!dragging) {
+          if (Math.abs(ev.clientX - startX) < 5) return
+          dragging = true
+          btn.classList.add('dragging')
+        }
+        // Insert before the first tab whose midpoint is right of the pointer.
+        const others = Array.from(this.tabBar.querySelectorAll<HTMLElement>('.tab')).filter(
+          (b) => b !== btn
+        )
+        let target: HTMLElement | null = null
+        for (const other of others) {
+          const rect = other.getBoundingClientRect()
+          if (ev.clientX < rect.left + rect.width / 2) {
+            target = other
+            break
+          }
+        }
+        this.tabBar.insertBefore(btn, target ?? this.newTabButton)
+      }
+
+      const onUp = (): void => {
+        window.removeEventListener('pointermove', onMove)
+        window.removeEventListener('pointerup', onUp)
+        window.removeEventListener('pointercancel', onUp)
+        if (!dragging) return
+        btn.classList.remove('dragging')
+        const order = Array.from(this.tabBar.querySelectorAll<HTMLElement>('.tab'))
+        this.tabs.sort((a, b) => order.indexOf(a.button) - order.indexOf(b.button))
+        this.dragJustEnded = true
+        setTimeout(() => {
+          this.dragJustEnded = false
+        }, 0)
+      }
+
+      // Window-level listeners: pointer capture on the button is unreliable in
+      // WebView2 once the pointer leaves the button's original bounds, so use
+      // the classic document-wide drag pattern instead.
+      window.addEventListener('pointermove', onMove)
+      window.addEventListener('pointerup', onUp)
+      window.addEventListener('pointercancel', onUp)
+    })
+  }
+
   /** Apply changed UI settings to every open terminal. */
   applySettings(s: AppSettings): void {
     for (const tab of this.tabs) tab.applySettings(s)
@@ -286,6 +555,13 @@ export class TabManager {
 
   tabForSession(sessionId: string): Tab | undefined {
     return this.bySessionId.get(sessionId)
+  }
+
+  /** Snapshot of the active tab's live session for the forwards panel. */
+  activeForwardTarget(): { sessionId: string; label: string; forwards: ForwardInfo[] } | null {
+    const tab = this.active
+    if (!tab?.sessionId) return null
+    return { sessionId: tab.sessionId, label: tab.statusText(), forwards: tab.listForwards() }
   }
 
   refreshStatusBar(): void {

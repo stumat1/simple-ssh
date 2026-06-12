@@ -107,6 +107,16 @@ pub struct KbdInteractiveRequest {
     pub prompts: Vec<KbdPrompt>,
 }
 
+/// A local (-L style) port forward: listen on 127.0.0.1:localPort, tunnel each
+/// connection to remoteHost:remotePort through the SSH session.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ForwardSpec {
+    pub local_port: u16,
+    pub remote_host: String,
+    pub remote_port: u16,
+}
+
 /// Initial PTY dimensions sent with a connect request.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct TerminalSize {

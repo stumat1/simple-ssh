@@ -2,6 +2,8 @@
 // `window.ssh`, implemented over Tauri IPC in src/renderer/ssh-api.ts.
 import type {
   ConnectRequest,
+  ForwardSpec,
+  ForwardStatusEvent,
   HostKeyPrompt,
   KbdInteractiveRequest,
   Profile,
@@ -15,6 +17,7 @@ export type StatusListener = (sessionId: string, status: SessionStatus) => void
 export type ErrorListener = (sessionId: string, message: string) => void
 export type HostKeyListener = (prompt: HostKeyPrompt) => void
 export type KbdListener = (request: KbdInteractiveRequest) => void
+export type ForwardListener = (event: ForwardStatusEvent) => void
 
 export interface SshApi {
   getVersion(): Promise<string>
@@ -52,6 +55,15 @@ export interface SshApi {
   /** Provide one answer per prompt for a keyboard-interactive challenge. */
   answerKeyboardInteractive(sessionId: string, answers: string[]): Promise<void>
 
+  /** Start a local port forward on a session; resolves with the forwardId. */
+  addForward(sessionId: string, spec: ForwardSpec): Promise<string>
+
+  /** Stop a port forward (closes its listener and tunneled connections). */
+  stopForward(sessionId: string, forwardId: string): Promise<void>
+
+  /** Lifecycle updates ('active'/'error'/'stopped') for port forwards. */
+  onForwardStatus(cb: ForwardListener): () => void
+
   /** Whether a password is saved for these credentials (no plaintext exposed). */
   hasPassword(host: string, port: number, username: string): Promise<boolean>
 
@@ -75,6 +87,9 @@ export interface SshApi {
 
   /** List recent successful connections (most recent first). */
   listRecents(): Promise<RecentConnection[]>
+
+  /** Import Host blocks from ~/.ssh/config as profiles (skips existing names). */
+  importSshConfig(): Promise<{ imported: number; skipped: number }>
 
   /** Open a native file picker for a private key; resolves with the path or null. */
   pickKeyFile(): Promise<string | null>

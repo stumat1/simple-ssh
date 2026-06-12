@@ -4,6 +4,7 @@
 //! host-key / ready-status policy that lived in src/main/index.ts.
 
 mod auth;
+mod forward;
 mod handler;
 
 use std::collections::HashMap;
@@ -15,13 +16,17 @@ use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::mpsc;
 use uuid::Uuid;
 
+use tokio_util::sync::CancellationToken;
+
 use crate::state::AppState;
-use crate::types::{ConnectRequest, SessionStatus, TerminalSize};
+use crate::types::{ConnectRequest, ForwardSpec, SessionStatus, TerminalSize};
 
 /// Commands the rest of the app can send into a live session task.
 enum SessionCmd {
     Write(Vec<u8>),
     Resize { cols: u32, rows: u32 },
+    AddForward { forward_id: String, spec: ForwardSpec },
+    StopForward { forward_id: String },
     Disconnect,
 }
 
@@ -120,6 +125,31 @@ impl SessionManager {
         }
     }
 
+    /// Starts a local port forward on a live session; returns its new id, or
+    /// None when the session doesn't exist. Outcome arrives via
+    /// `ssh:forward-status` events ('active' / 'error').
+    pub fn add_forward(&self, session_id: &str, spec: ForwardSpec) -> Option<String> {
+        let sessions = self.sessions.lock().unwrap();
+        let s = sessions.get(session_id)?;
+        let forward_id = Uuid::new_v4().to_string();
+        s.cmd_tx
+            .send(SessionCmd::AddForward {
+                forward_id: forward_id.clone(),
+                spec,
+            })
+            .ok()?;
+        Some(forward_id)
+    }
+
+    /// Stops a forward (its listener and any tunneled connections).
+    pub fn stop_forward(&self, session_id: &str, forward_id: &str) {
+        if let Some(s) = self.sessions.lock().unwrap().get(session_id) {
+            let _ = s.cmd_tx.send(SessionCmd::StopForward {
+                forward_id: forward_id.to_string(),
+            });
+        }
+    }
+
     /// Requests a graceful disconnect; final cleanup happens in the session task.
     pub fn disconnect(&self, session_id: &str) {
         if let Some(s) = self.sessions.lock().unwrap().get(session_id) {
@@ -205,8 +235,10 @@ async fn run_session(
     // No blanket timeout here: connect_and_auth may legitimately sit for
     // minutes inside a host-key or MFA prompt waiting on the user. The TCP
     // connect itself is bounded inside (ssh2's readyTimeout equivalent).
-    let mut handle = match auth::connect_and_auth(&app, &session_id, &req, config).await {
-        Ok(handle) => handle,
+    // Arc so port-forward tasks can open channels concurrently with the shell
+    // (russh Handle methods all take &self).
+    let handle = match auth::connect_and_auth(&app, &session_id, &req, config).await {
+        Ok(handle) => Arc::new(handle),
         Err(e) => {
             fail(&app, &session_id, e.to_string());
             return;
@@ -215,7 +247,7 @@ async fn run_session(
 
     // PTY + shell.
     let (cols, rows) = size.map(|s| (s.cols, s.rows)).unwrap_or((80, 24));
-    let channel = match open_shell(&mut handle, cols, rows).await {
+    let channel = match open_shell(&handle, cols, rows).await {
         Ok(ch) => ch,
         Err(e) => {
             fail(&app, &session_id, e.to_string());
@@ -224,6 +256,10 @@ async fn run_session(
     };
 
     on_ready(&app, &session_id);
+
+    // Active port forwards: cancelling a token stops that forward's listener
+    // and all of its tunneled connections.
+    let mut forwards: HashMap<String, CancellationToken> = HashMap::new();
 
     let mut channel = channel;
     loop {
@@ -255,6 +291,23 @@ async fn run_session(
                     Some(SessionCmd::Resize { cols, rows }) => {
                         let _ = channel.window_change(cols, rows, 0, 0).await;
                     }
+                    Some(SessionCmd::AddForward { forward_id, spec }) => {
+                        let cancel = CancellationToken::new();
+                        forwards.insert(forward_id.clone(), cancel.clone());
+                        tauri::async_runtime::spawn(forward::run_forward(
+                            app.clone(),
+                            session_id.clone(),
+                            forward_id,
+                            spec,
+                            handle.clone(),
+                            cancel,
+                        ));
+                    }
+                    Some(SessionCmd::StopForward { forward_id }) => {
+                        if let Some(cancel) = forwards.remove(&forward_id) {
+                            cancel.cancel();
+                        }
+                    }
                     Some(SessionCmd::Disconnect) | None => {
                         let _ = channel.eof().await;
                         break;
@@ -264,6 +317,9 @@ async fn run_session(
         }
     }
 
+    for cancel in forwards.values() {
+        cancel.cancel();
+    }
     let _ = handle
         .disconnect(russh::Disconnect::ByApplication, "", "en")
         .await;
@@ -271,7 +327,7 @@ async fn run_session(
 }
 
 async fn open_shell(
-    handle: &mut russh::client::Handle<handler::ClientHandler>,
+    handle: &russh::client::Handle<handler::ClientHandler>,
     cols: u32,
     rows: u32,
 ) -> Result<russh::Channel<russh::client::Msg>, russh::Error> {

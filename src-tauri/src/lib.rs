@@ -4,6 +4,7 @@ mod known_hosts;
 mod profiles;
 mod secrets;
 mod session;
+mod ssh_config;
 mod state;
 mod types;
 

@@ -1,4 +1,4 @@
-import type { AuthKind, AuthMethod, ConnectRequest, Profile, RecentConnection } from '@shared/types'
+import type { AuthKind, AuthMethod, ConnectRequest, Profile } from '@shared/types'
 
 export interface ConnectFormHandle {
   /** Root element to mount into a tab pane. */
@@ -8,6 +8,13 @@ export interface ConnectFormHandle {
   focus: () => void
   setError: (message: string) => void
   setBusy: (busy: boolean) => void
+  /** Pre-fill the fields from a previous request (secrets are not restored into inputs). */
+  prefill: (req: ConnectRequest) => void
+  /**
+   * Load a target (e.g. a recent connection) and connect immediately when no
+   * secret is needed; otherwise focus the secret field.
+   */
+  openTarget: (host: string, port: number, username: string, auth: AuthMethod) => void
   dispose: () => void
 }
 
@@ -26,10 +33,8 @@ const TEMPLATE = `
       <div class="section-label">Saved profiles</div>
       <ul class="profile-list"></ul>
     </section>
-    <section class="recent-section hidden">
-      <div class="section-label">Recent</div>
-      <ul class="recent-list"></ul>
-    </section>
+    <button type="button" class="f-import btn-secondary">Import from ~/.ssh/config</button>
+    <p class="hint f-import-hint hidden"></p>
 
     <label>Host <input class="f-host" type="text" placeholder="example.com" required /></label>
     <label>Port <input class="f-port" type="number" value="22" min="1" max="65535" /></label>
@@ -111,8 +116,6 @@ export function createConnectForm(onConnect: (req: ConnectRequest) => void): Con
 
   const savedSection = q<HTMLElement>('.saved-section')
   const profileList = q<HTMLUListElement>('.profile-list')
-  const recentSection = q<HTMLElement>('.recent-section')
-  const recentList = q<HTMLUListElement>('.recent-list')
 
   const selectedKind = (): AuthKind => authSelect.value as AuthKind
 
@@ -127,6 +130,31 @@ export function createConnectForm(onConnect: (req: ConnectRequest) => void): Con
   authSelect.addEventListener('change', applyAuthVisibility)
   saveProfile.addEventListener('change', () => {
     profileNameRow.classList.toggle('hidden', !saveProfile.checked)
+  })
+
+  const importBtn = q<HTMLButtonElement>('.f-import')
+  const importHint = q<HTMLElement>('.f-import-hint')
+  importBtn.addEventListener('click', () => {
+    importBtn.disabled = true
+    importHint.classList.remove('hidden')
+    importHint.textContent = 'Importing…'
+    window.ssh
+      .importSshConfig()
+      .then(({ imported, skipped }) => {
+        importHint.textContent =
+          imported === 0 && skipped === 0
+            ? 'No importable Host entries found.'
+            : `Imported ${imported} host${imported === 1 ? '' : 's'}` +
+              (skipped ? ` (${skipped} already existed)` : '') +
+              '.'
+        if (imported > 0) announceProfilesChanged()
+      })
+      .catch((err: unknown) => {
+        importHint.textContent = err instanceof Error ? err.message : String(err)
+      })
+      .finally(() => {
+        importBtn.disabled = false
+      })
   })
 
   browse.addEventListener('click', () => {
@@ -351,37 +379,8 @@ export function createConnectForm(onConnect: (req: ConnectRequest) => void): Con
     }
   }
 
-  function renderRecents(recents: RecentConnection[]): void {
-    recentList.replaceChildren()
-    recentSection.classList.toggle('hidden', recents.length === 0)
-    for (const recent of recents) {
-      const li = document.createElement('li')
-      li.className = 'list-row'
-      const openBtn = document.createElement('button')
-      openBtn.type = 'button'
-      openBtn.className = 'list-main'
-      const nameSpan = document.createElement('span')
-      nameSpan.className = 'list-name'
-      nameSpan.textContent = `${recent.username}@${recent.host}:${recent.port}`
-      const metaSpan = document.createElement('span')
-      metaSpan.className = 'list-meta'
-      metaSpan.textContent = authLabel(recent.auth)
-      openBtn.append(nameSpan, metaSpan)
-      openBtn.addEventListener('click', () => {
-        void activate(recent.host, recent.port, recent.username, recent.auth)
-      })
-      li.append(openBtn)
-      recentList.appendChild(li)
-    }
-  }
-
   async function refreshLists(): Promise<void> {
-    const [profiles, recents] = await Promise.all([
-      window.ssh.listProfiles(),
-      window.ssh.listRecents()
-    ])
-    renderProfiles(profiles)
-    renderRecents(recents)
+    renderProfiles(await window.ssh.listProfiles())
   }
 
   const onProfilesChanged = (): void => void refreshLists()
@@ -407,6 +406,8 @@ export function createConnectForm(onConnect: (req: ConnectRequest) => void): Con
       submit.disabled = busy
       submit.textContent = busy ? 'Connecting…' : 'Connect'
     },
+    prefill: (req) => loadInto(req.host, req.port, req.username, req.auth),
+    openTarget: (host_, port_, user_, auth) => void activate(host_, port_, user_, auth),
     dispose: () => {
       window.removeEventListener(PROFILES_CHANGED, onProfilesChanged)
     }

@@ -6,7 +6,7 @@ use tauri::{AppHandle, Manager, State};
 
 use crate::secrets::{passphrase_id, password_id};
 use crate::state::{AppState, PendingSecretSave};
-use crate::types::{ConnectRequest, Profile, RecentConnection, TerminalSize};
+use crate::types::{ConnectRequest, ForwardSpec, Profile, RecentConnection, TerminalSize};
 
 #[tauri::command]
 pub fn ssh_connect(
@@ -110,6 +110,33 @@ pub fn kbd_answer(state: State<'_, AppState>, session_id: String, answers: Vec<S
     }
 }
 
+// --- Local port forwarding ---
+
+/// Start a local (-L) forward on a live session. Returns the forwardId; the
+/// listener's outcome arrives via `ssh:forward-status` events.
+#[tauri::command]
+pub fn forward_add(
+    state: State<'_, AppState>,
+    session_id: String,
+    spec: ForwardSpec,
+) -> Result<String, String> {
+    if spec.local_port == 0 || spec.remote_port == 0 {
+        return Err("Ports must be between 1 and 65535.".into());
+    }
+    if spec.remote_host.trim().is_empty() {
+        return Err("Remote host is required.".into());
+    }
+    state
+        .sessions
+        .add_forward(&session_id, spec)
+        .ok_or_else(|| "Session is not connected.".to_string())
+}
+
+#[tauri::command]
+pub fn forward_stop(state: State<'_, AppState>, session_id: String, forward_id: String) {
+    state.sessions.stop_forward(&session_id, &forward_id);
+}
+
 // --- Secrets (presence/forget only; plaintext never crosses the bridge) ---
 
 #[tauri::command]
@@ -164,6 +191,70 @@ pub fn recents_list(state: State<'_, AppState>) -> Vec<RecentConnection> {
     state.profiles.lock().unwrap().recents()
 }
 
+/// Result of a one-way `~/.ssh/config` import.
+#[derive(serde::Serialize)]
+pub struct SshConfigImportResult {
+    pub imported: usize,
+    pub skipped: usize,
+}
+
+/// Import Host blocks from the user's OpenSSH config as saved profiles.
+/// Hosts whose alias matches an existing profile name (case-insensitive) are
+/// skipped, so re-importing never duplicates or overwrites.
+#[tauri::command]
+pub fn ssh_config_import(state: State<'_, AppState>) -> Result<SshConfigImportResult, String> {
+    let path = crate::ssh_config::default_config_path()
+        .ok_or_else(|| "Could not determine the home directory.".to_string())?;
+    let text = std::fs::read_to_string(&path)
+        .map_err(|e| format!("Could not read {}: {e}", path.display()))?;
+    let home = crate::ssh_config::home_dir().unwrap_or_default();
+    let hosts = crate::ssh_config::parse(&text, &home);
+
+    // Hosts without a User directive default to the local username.
+    let local_user = std::env::var("USERNAME")
+        .or_else(|_| std::env::var("USER"))
+        .unwrap_or_default();
+
+    let mut profiles = state.profiles.lock().unwrap();
+    let mut existing: std::collections::HashSet<String> = profiles
+        .list()
+        .iter()
+        .map(|p| p.name.to_ascii_lowercase())
+        .collect();
+
+    let mut imported = 0;
+    let mut skipped = 0;
+    for host in hosts {
+        if !existing.insert(host.name.to_ascii_lowercase()) {
+            skipped += 1;
+            continue;
+        }
+        let auth = match &host.identity_file {
+            Some(key_path) => crate::types::AuthMethod::Key {
+                key_path: key_path.clone(),
+                passphrase: None,
+            },
+            None => crate::types::AuthMethod::Agent,
+        };
+        let username = if host.username.is_empty() {
+            local_user.clone()
+        } else {
+            host.username
+        };
+        profiles.save(Profile {
+            id: String::new(),
+            name: host.name,
+            host: host.host,
+            port: host.port,
+            username,
+            auth,
+            save_secret: false,
+        });
+        imported += 1;
+    }
+    Ok(SshConfigImportResult { imported, skipped })
+}
+
 /// Everything `run()` registers, in one place.
 pub fn handlers() -> impl Fn(tauri::ipc::Invoke) -> bool {
     tauri::generate_handler![
@@ -173,6 +264,8 @@ pub fn handlers() -> impl Fn(tauri::ipc::Invoke) -> bool {
         ssh_resize,
         hostkey_decision,
         kbd_answer,
+        forward_add,
+        forward_stop,
         secret_has_password,
         secret_forget_password,
         secret_has_passphrase,
@@ -180,7 +273,8 @@ pub fn handlers() -> impl Fn(tauri::ipc::Invoke) -> bool {
         profiles_list,
         profiles_save,
         profiles_delete,
-        recents_list
+        recents_list,
+        ssh_config_import
     ]
 }
 

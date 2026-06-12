@@ -55,6 +55,14 @@ const server = new Server({ hostKeys: [privateKey] }, (client) => {
 
   client.on('ready', () => {
     console.log('[sshd] client authenticated')
+    // direct-tcpip (local port forwarding): greet then echo, for tunnel tests.
+    client.on('tcpip', (accept, _reject, info) => {
+      console.log(`[sshd] direct-tcpip ${info.srcIP}:${info.srcPort} -> ${info.destIP}:${info.destPort}`)
+      const stream = accept()
+      stream.write('tcpip-echo ready\r\n')
+      stream.on('data', (chunk) => stream.write(chunk))
+      stream.on('close', () => console.log('[sshd] tcpip stream closed'))
+    })
     client.on('session', (accept) => {
       const session = accept()
       let pty = { cols: 0, rows: 0, term: '?' }

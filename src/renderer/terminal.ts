@@ -1,4 +1,4 @@
-import { Terminal, type ITheme } from '@xterm/xterm'
+import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebglAddon } from '@xterm/addon-webgl'
 import { Unicode11Addon } from '@xterm/addon-unicode11'
@@ -6,62 +6,12 @@ import { WebLinksAddon } from '@xterm/addon-web-links'
 import { SearchAddon } from '@xterm/addon-search'
 import { openUrl } from '@tauri-apps/plugin-opener'
 import '@xterm/xterm/css/xterm.css'
-import type { ThemeName } from './settings'
-
-// Dark theme aligned with the app shell (see styles.css).
-const darkTheme: ITheme = {
-  background: '#1e1e1e',
-  foreground: '#d4d4d4',
-  cursor: '#d4d4d4',
-  cursorAccent: '#1e1e1e',
-  selectionBackground: '#264f78',
-  black: '#000000',
-  red: '#cd3131',
-  green: '#0dbc79',
-  yellow: '#e5e510',
-  blue: '#2472c8',
-  magenta: '#bc3fbc',
-  cyan: '#11a8cd',
-  white: '#e5e5e5',
-  brightBlack: '#666666',
-  brightRed: '#f14c4c',
-  brightGreen: '#23d18b',
-  brightYellow: '#f5f543',
-  brightBlue: '#3b8eea',
-  brightMagenta: '#d670d6',
-  brightCyan: '#29b8db',
-  brightWhite: '#ffffff'
-}
-
-const lightTheme: ITheme = {
-  background: '#ffffff',
-  foreground: '#333333',
-  cursor: '#333333',
-  cursorAccent: '#ffffff',
-  selectionBackground: '#add6ff',
-  black: '#000000',
-  red: '#cd3131',
-  green: '#107c10',
-  yellow: '#949800',
-  blue: '#0451a5',
-  magenta: '#bc05bc',
-  cyan: '#0598bc',
-  white: '#555555',
-  brightBlack: '#666666',
-  brightRed: '#cd3131',
-  brightGreen: '#14ce14',
-  brightYellow: '#b5ba00',
-  brightBlue: '#0451a5',
-  brightMagenta: '#bc05bc',
-  brightCyan: '#0598bc',
-  brightWhite: '#a5a5a5'
-}
-
-const THEMES: Record<ThemeName, ITheme> = { dark: darkTheme, light: lightTheme }
+import type { AppSettings } from './settings'
+import { resolveTheme } from './themes'
+import { showContextMenu } from './context-menu'
 
 export interface TerminalInit {
-  fontSize: number
-  theme: ThemeName
+  settings: AppSettings
   /**
    * App-level shortcut handler (new tab, close tab, font size, …). Return true
    * if the key was consumed, in which case it is kept out of the PTY.
@@ -73,10 +23,8 @@ export interface TerminalHandle {
   term: Terminal
   /** Refit the terminal grid to the current container size. */
   fit: () => void
-  /** Apply a new terminal font size (px) and refit. */
-  setFontSize: (px: number) => void
-  /** Switch the terminal color theme. */
-  setTheme: (theme: ThemeName) => void
+  /** Apply changed appearance settings (font, cursor, theme, …) and refit. */
+  applySettings: (s: AppSettings) => void
   /** Show the in-terminal search bar and focus it. */
   openSearch: () => void
   /** Tear down the terminal and its observers/DOM. */
@@ -128,14 +76,17 @@ function buildSearchBar(): {
  * app shortcuts. Keeps the grid fitted to the container via a ResizeObserver.
  */
 export function createTerminal(container: HTMLElement, init: TerminalInit): TerminalHandle {
+  const s = init.settings
   const term = new Terminal({
-    cursorBlink: true,
-    fontFamily: '"Cascadia Code", "Cascadia Mono", Consolas, "Courier New", monospace',
-    fontSize: init.fontSize,
-    scrollback: 5000,
+    cursorBlink: s.cursorBlink,
+    cursorStyle: s.cursorStyle,
+    fontFamily: s.fontFamily,
+    fontSize: s.fontSize,
+    lineHeight: s.lineHeight,
+    scrollback: s.scrollback,
     // Required by the unicode11 addon, which uses xterm's proposed unicode API.
     allowProposedApi: true,
-    theme: THEMES[init.theme]
+    theme: resolveTheme(s.scheme, s.theme)
   })
 
   const fitAddon = new FitAddon()
@@ -207,6 +158,30 @@ export function createTerminal(container: HTMLElement, init: TerminalInit): Term
   next.addEventListener('click', findNext)
   close.addEventListener('click', closeSearch)
 
+  // --- Right-click menu (the WebView default is suppressed app-wide in main.ts) ---
+  const pasteFromClipboard = (): void => {
+    void window.ssh.clipboardRead().then((text) => {
+      if (text) term.paste(text)
+      term.focus()
+    })
+  }
+  const onContextMenu = (e: MouseEvent): void => {
+    e.preventDefault()
+    const selection = term.getSelection()
+    showContextMenu(e.clientX, e.clientY, [
+      {
+        label: 'Copy',
+        enabled: !!selection,
+        action: () => void window.ssh.clipboardWrite(selection)
+      },
+      { label: 'Paste', action: pasteFromClipboard },
+      'separator',
+      { label: 'Select all', action: () => term.selectAll() },
+      { label: 'Clear', action: () => term.clear() }
+    ])
+  }
+  container.addEventListener('contextmenu', onContextMenu)
+
   // --- Keyboard: copy/paste, find, and app shortcuts ---
   term.attachCustomKeyEventHandler((e): boolean => {
     if (e.type !== 'keydown') return true
@@ -257,19 +232,23 @@ export function createTerminal(container: HTMLElement, init: TerminalInit): Term
 
   fit()
 
-  const setFontSize = (px: number): void => {
-    term.options.fontSize = px
+  const applySettings = (next: AppSettings): void => {
+    term.options.cursorBlink = next.cursorBlink
+    term.options.cursorStyle = next.cursorStyle
+    term.options.fontFamily = next.fontFamily
+    term.options.fontSize = next.fontSize
+    term.options.lineHeight = next.lineHeight
+    term.options.scrollback = next.scrollback
+    term.options.theme = resolveTheme(next.scheme, next.theme)
     fit()
-  }
-  const setTheme = (theme: ThemeName): void => {
-    term.options.theme = THEMES[theme]
   }
 
   const dispose = (): void => {
     resizeObserver.disconnect()
+    container.removeEventListener('contextmenu', onContextMenu)
     bar.remove()
     term.dispose()
   }
 
-  return { term, fit, setFontSize, setTheme, openSearch, dispose }
+  return { term, fit, applySettings, openSearch, dispose }
 }

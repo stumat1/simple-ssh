@@ -94,6 +94,21 @@ body {
   white-space: nowrap;
 }
 
+.tab.dragging {
+  opacity: 0.6;
+}
+
+.tab-rename {
+  width: 110px;
+  padding: 1px 4px;
+  font-size: 12px;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--accent);
+  border-radius: 3px;
+  outline: none;
+}
+
 .tab-close {
   flex: 0 0 auto;
   width: 16px;
@@ -202,6 +217,79 @@ body {
 
 .card input:focus {
   border-color: var(--accent);
+}
+
+.card select {
+  padding: 7px 9px;
+  font-size: 13px;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  outline: none;
+}
+
+.card select:focus {
+  border-color: var(--accent);
+}
+
+/* Settings + forwards modals sit above panes but below auth modals. */
+#settings-view,
+#forwards-view {
+  z-index: 18;
+}
+
+.forwards-card {
+  width: 420px;
+}
+
+.forward-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.forward-row {
+  cursor: default;
+}
+
+.forward-row:hover {
+  border-color: var(--border);
+}
+
+.forward-error {
+  color: #f14c4c;
+}
+
+.forward-add-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.forward-add-row input {
+  min-width: 0;
+}
+
+.forward-add-row input[type='number'] {
+  flex: 0 0 84px;
+}
+
+.forward-add-row input[type='text'] {
+  flex: 1 1 auto;
+}
+
+.forward-add-row span {
+  color: var(--muted);
+}
+
+.forward-add-row button {
+  flex: 0 0 auto;
+  margin-top: 0;
+  padding: 7px 14px;
 }
 
 .card button {
@@ -317,12 +405,12 @@ body {
 }
 
 .sb-btn {
-  min-width: 24px;
-  height: 20px;
-  padding: 0 6px;
-  font-size: 12px;
+  min-width: 26px;
+  height: 22px;
+  padding: 0 7px;
+  font-size: 14px;
   line-height: 1;
-  color: var(--muted);
+  color: var(--fg);
   background: transparent;
   border: 1px solid var(--border);
   border-radius: 4px;
@@ -330,8 +418,9 @@ body {
 }
 
 .sb-btn:hover {
-  color: var(--fg);
-  background: rgba(127, 127, 127, 0.15);
+  color: #fff;
+  background: var(--accent);
+  border-color: var(--accent);
 }
 
 .sb-readout {
@@ -525,6 +614,48 @@ body {
 .search-btn:hover {
   color: var(--fg);
   background: rgba(127, 127, 127, 0.15);
+}
+
+/* Custom context menu */
+.context-menu {
+  position: fixed;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  min-width: 140px;
+  padding: 4px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+.context-menu-item {
+  padding: 6px 12px;
+  font-size: 12px;
+  text-align: left;
+  color: var(--fg);
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.context-menu-item:hover:not(:disabled) {
+  background: var(--accent);
+  color: #fff;
+}
+
+.context-menu-item:disabled {
+  color: var(--muted);
+  opacity: 0.6;
+  cursor: default;
+}
+
+.context-menu-sep {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--border);
 }
 
 /* Light theme overrides for the app chrome (xterm gets its own theme in JS). */

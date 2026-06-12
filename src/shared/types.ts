@@ -74,3 +74,21 @@ export interface TerminalSize {
 }
 
 export type SessionStatus = 'connecting' | 'ready' | 'closed' | 'error'
+
+/** A local (-L style) port forward through an SSH session. */
+export interface ForwardSpec {
+  localPort: number
+  remoteHost: string
+  remotePort: number
+}
+
+export type ForwardStatus = 'active' | 'error' | 'stopped'
+
+/** Lifecycle update for a port forward. */
+export interface ForwardStatusEvent {
+  sessionId: string
+  forwardId: string
+  spec: ForwardSpec
+  status: ForwardStatus
+  message?: string
+}

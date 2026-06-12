@@ -14,6 +14,7 @@ import { readText, writeText } from '@tauri-apps/plugin-clipboard-manager'
 import type {
   DataListener,
   ErrorListener,
+  ForwardListener,
   HostKeyListener,
   KbdListener,
   SshApi,
@@ -21,6 +22,7 @@ import type {
 } from '@shared/api'
 import type {
   ConnectRequest,
+  ForwardStatusEvent,
   HostKeyPrompt,
   KbdInteractiveRequest,
   Profile,
@@ -34,6 +36,7 @@ const statusListeners = new Set<StatusListener>()
 const errorListeners = new Set<ErrorListener>()
 const hostKeyListeners = new Set<HostKeyListener>()
 const kbdListeners = new Set<KbdListener>()
+const forwardListeners = new Set<ForwardListener>()
 
 /** Add to a listener set; returns the matching unsubscribe function. */
 function subscribe<T>(set: Set<T>, cb: T): () => void {
@@ -66,6 +69,9 @@ void listen<HostKeyPrompt>('ssh:hostkey-prompt', (e) => {
 })
 void listen<KbdInteractiveRequest>('ssh:kbd-prompt', (e) => {
   for (const cb of kbdListeners) cb(e.payload)
+})
+void listen<ForwardStatusEvent>('ssh:forward-status', (e) => {
+  for (const cb of forwardListeners) cb(e.payload)
 })
 
 export const tauriSshApi: SshApi = {
@@ -104,6 +110,10 @@ export const tauriSshApi: SshApi = {
   hostKeyDecision: (sessionId, accept) => invoke('hostkey_decision', { sessionId, accept }),
   answerKeyboardInteractive: (sessionId, answers) => invoke('kbd_answer', { sessionId, answers }),
 
+  addForward: (sessionId, spec) => invoke<string>('forward_add', { sessionId, spec }),
+  stopForward: (sessionId, forwardId) => invoke('forward_stop', { sessionId, forwardId }),
+  onForwardStatus: (cb) => subscribe(forwardListeners, cb),
+
   hasPassword: (host, port, username) =>
     invoke<boolean>('secret_has_password', { host, port, username }),
   forgetPassword: (host, port, username) =>
@@ -115,6 +125,7 @@ export const tauriSshApi: SshApi = {
   saveProfile: (profile) => invoke<Profile>('profiles_save', { profile }),
   deleteProfile: (id) => invoke('profiles_delete', { id }),
   listRecents: () => invoke<RecentConnection[]>('recents_list'),
+  importSshConfig: () => invoke<{ imported: number; skipped: number }>('ssh_config_import'),
 
   pickKeyFile: async () => {
     const picked = await open({
